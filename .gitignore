@@ -1,0 +1,9 @@
+# 测试截图，不入库
+tools/shots/
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini

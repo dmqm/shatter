@@ -1,0 +1,1021 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no,maximum-scale=1">
+<title>碎 · SHATTER</title>
+<meta name="description" content="点掉同色的整团，看它们塌下来。单指可玩的消除小游戏。">
+<meta name="theme-color" content="#0A0812">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="碎">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" href="icon-192.png">
+<style>
+  :root{
+    --ink:#0A0812;
+    --ink-2:#160F2B;
+    --line:rgba(255,255,255,.10);
+    --line-soft:rgba(255,255,255,.055);
+    --fg:#F4F1FA;
+    --fg-2:#9C93B8;
+    --fg-3:#6B6383;
+    --hot:#FFD166;
+    --pad-t:env(safe-area-inset-top,0px);
+    --pad-b:env(safe-area-inset-bottom,0px);
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{
+    height:100%;
+    background:var(--ink);
+    color:var(--fg);
+    overscroll-behavior:none;
+    touch-action:none;
+    -webkit-tap-highlight-color:transparent;
+    -webkit-user-select:none;user-select:none;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI Variable Display","Segoe UI",system-ui,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  }
+  body{
+    background:
+      radial-gradient(120% 80% at 50% 0%, #241A47 0%, #150E2A 42%, var(--ink) 100%);
+    overflow:hidden;
+  }
+  body::after{
+    content:"";position:fixed;inset:0;pointer-events:none;
+    background:radial-gradient(100% 70% at 50% 45%, transparent 40%, rgba(0,0,0,.55) 100%);
+  }
+
+  #app{
+    position:fixed;inset:0;
+    display:flex;flex-direction:column;
+    padding:calc(var(--pad-t) + 10px) 16px calc(var(--pad-b) + 8px);
+  }
+
+  /* ---------- HUD ---------- */
+  #hud{flex:none}
+  .hud-top{display:flex;align-items:flex-end;justify-content:space-between;gap:12px}
+  .stat{display:flex;flex-direction:column;gap:2px;min-width:0}
+  .stat.right{align-items:flex-end}
+  .stat .label{
+    font-size:11px;font-weight:500;color:var(--fg-3);letter-spacing:.06em;
+  }
+  .stat strong{
+    font-size:38px;line-height:1;font-weight:800;letter-spacing:-.02em;
+    font-variant-numeric:tabular-nums;
+    text-shadow:0 0 26px rgba(255,209,102,.18);
+  }
+  .stat strong.dim{font-size:20px;font-weight:600;color:var(--fg-2);text-shadow:none;letter-spacing:0}
+  .stat.gain strong{animation:gain .34s cubic-bezier(.2,1.6,.4,1)}
+  @keyframes gain{from{transform:scale(1.14) translateY(-3px);color:var(--hot)}to{transform:none}}
+
+  .hud-bar{display:flex;align-items:center;gap:10px;margin-top:12px}
+  .chip{
+    font-size:12px;font-weight:600;color:var(--fg-2);
+    font-variant-numeric:tabular-nums;white-space:nowrap;
+  }
+  .track{
+    position:relative;flex:1;height:4px;border-radius:99px;
+    background:rgba(255,255,255,.07);overflow:hidden;
+  }
+  .track i{
+    position:absolute;inset:0 auto 0 0;width:0%;border-radius:99px;
+    background:rgba(255,255,255,.13);
+  }
+  /* 连击条：每帧刷新，不要过渡 */
+  .track.hot i{
+    background:linear-gradient(90deg,#FFD166,#FF4D6D);
+    box-shadow:0 0 12px rgba(255,110,90,.55);
+  }
+
+  /* ---------- 棋盘 ---------- */
+  #stage{position:relative;flex:1;min-height:0;margin:14px 0 10px}
+  #board{display:block;width:100%;height:100%;touch-action:none}
+
+  #combo{
+    position:absolute;left:0;right:0;top:9%;pointer-events:none;
+    text-align:center;font-size:52px;font-weight:800;letter-spacing:-.03em;
+    color:var(--hot);opacity:0;
+    text-shadow:0 0 40px rgba(255,209,102,.6),0 4px 0 rgba(0,0,0,.35);
+  }
+  #combo.pop{animation:pop .62s cubic-bezier(.15,1.5,.4,1)}
+  @keyframes pop{
+    0%{opacity:0;transform:scale(.5) rotate(-6deg)}
+    22%{opacity:1;transform:scale(1.06) rotate(1deg)}
+    62%{opacity:1;transform:scale(1)}
+    100%{opacity:0;transform:scale(1) translateY(-26px)}
+  }
+  #toast{
+    position:absolute;left:0;right:0;top:50%;pointer-events:none;text-align:center;
+    font-size:17px;font-weight:700;color:var(--fg);opacity:0;letter-spacing:.02em;
+  }
+  #toast.show{animation:toast 1.5s ease-out}
+  @keyframes toast{
+    0%{opacity:0;transform:translateY(10px)}
+    18%{opacity:1;transform:none}
+    70%{opacity:1}
+    100%{opacity:0;transform:translateY(-14px)}
+  }
+
+  /* ---------- 底部 ---------- */
+  #foot{
+    flex:none;display:flex;align-items:center;gap:8px;
+    padding-top:10px;border-top:1px solid var(--line-soft);
+  }
+  #foot button{
+    flex:1;appearance:none;border:1px solid var(--line);
+    background:rgba(255,255,255,.04);color:var(--fg-2);
+    font:inherit;font-size:13px;font-weight:600;
+    padding:11px 8px;border-radius:11px;cursor:pointer;
+    transition:background .16s,color .16s,transform .1s;
+  }
+  #foot button:active{transform:scale(.97);background:rgba(255,255,255,.09);color:var(--fg)}
+  #foot button:focus-visible{outline:2px solid var(--hot);outline-offset:2px}
+
+  @media (prefers-reduced-motion:reduce){
+    *{animation-duration:.01ms !important;transition-duration:.01ms !important}
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <header id="hud">
+    <div class="hud-top">
+      <div class="stat" id="stat-score">
+        <span class="label">得分</span>
+        <strong id="score">0</strong>
+      </div>
+      <div class="stat right">
+        <span class="label">最高</span>
+        <strong id="best" class="dim">0</strong>
+      </div>
+    </div>
+    <div class="hud-bar">
+      <span class="chip" id="wave">第 1 波</span>
+      <div class="track" id="track"><i id="fill"></i></div>
+      <span class="chip" id="combos">连击 —</span>
+    </div>
+  </header>
+
+  <main id="stage">
+    <canvas id="board"></canvas>
+    <div id="combo"></div>
+    <div id="toast"></div>
+  </main>
+
+  <footer id="foot">
+    <button id="btn-hint">提示</button>
+    <button id="btn-sound">声音 开</button>
+    <button id="btn-restart">重开</button>
+  </footer>
+</div>
+
+<script>
+(() => {
+'use strict';
+
+/* ═══════════════ 常量 ═══════════════ */
+const COLS = 8;
+let ROWS = 11;             // 由 computeRows() 按实际可用宽高比定，见下
+// 矿物色：深色底上炸开足够鲜艳，明度拉出层次，弱色觉也能靠亮度区分
+const HUES = [
+  { base:'#FF4D6D', light:'#FF93A8', name:'绯' },
+  { base:'#FF9E3D', light:'#FFC684', name:'橙' },
+  { base:'#FFE066', light:'#FFF3B0', name:'黄' },
+  { base:'#4ADE80', light:'#96EFB4', name:'绿' },
+  { base:'#38BDF8', light:'#8ADBFC', name:'蓝' },
+  { base:'#A78BFA', light:'#CDBCFD', name:'紫' },
+];
+const GRAV       = 3600;   // px/s²
+const COMBO_WIN  = 1500;   // ms 内继续消算连击
+const COMBO_MAX  = 9;
+const REDUCE     = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* ═══════════════ 状态 ═══════════════ */
+const S = {
+  cols: [],            // cols[c] = [tile,...]  索引 0 在底部
+  score: 0,
+  best: +(localStorage.getItem('shatter.best') || 0),
+  wave: 1,
+  // 本波已得（结算时用来报账）
+  waveScore: 0,
+  // 连击
+  combo: 0,
+  comboT: 0,
+  // 动画
+  parts: [],
+  floats: [],
+  rings: [],
+  shake: 0,
+  hint: null,
+  hintT: 0,
+  settling: false,
+  phase: 'play',       // play | waveclear
+  muted: localStorage.getItem('shatter.muted') === '1',
+  // 布局
+  tile: 40, boardX: 0, boardY: 0, boardW: 0, boardH: 0,
+  last: 0,
+};
+
+// 颜色随波次变多：团变小、可消的团变稀，连击就越难接上 —— 难度全在速度上
+const colorsFor = w => Math.min(6, 3 + Math.floor((w - 1) / 2));
+
+/* ═══════════════ DOM ═══════════════ */
+const $ = id => document.getElementById(id);
+const cv = $('board');
+const ctx = cv.getContext('2d');
+const el = {
+  score:$('score'), best:$('best'), wave:$('wave'), fill:$('fill'),
+  combos:$('combos'), combo:$('combo'), toast:$('toast'), track:$('track'),
+  statScore:$('stat-score'),
+};
+
+/* ═══════════════ 音效：连击即旋律 ═══════════════ */
+let actx = null, master = null;
+const PENTA = [0, 2, 4, 7, 9];
+
+function audio(){
+  if (S.muted) return null;
+  try{
+    if (!actx){
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return null;
+      actx = new AC();
+      master = actx.createGain();
+      master.gain.value = 0.5;
+      master.connect(actx.destination);
+    }
+    if (actx.state === 'suspended') actx.resume();
+    return actx;
+  }catch(e){ return null; }
+}
+
+// 消掉一团：团越大声部越多，连击越高整体升调 —— 顺的时候等于在弹琴
+function sfxPop(n, combo){
+  const a = audio(); if (!a) return;
+  const t0 = a.currentTime;
+  const shift = (Math.min(combo, COMBO_MAX) - 1) * 2;   // 每次连击升 2 个半音
+  const voices = Math.min(n, 5);
+  for (let v = 0; v < voices; v++){
+    const deg = PENTA[v % PENTA.length] + 12 * Math.floor(v / PENTA.length);
+    const f = 261.63 * Math.pow(2, (deg + shift) / 12);
+    const t = t0 + v * 0.032;
+    const o = a.createOscillator(), g = a.createGain();
+    o.type = 'triangle';
+    o.frequency.setValueAtTime(f, t);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(0.16 / Math.sqrt(voices), t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.34);
+    o.connect(g); g.connect(master);
+    o.start(t); o.stop(t + 0.36);
+  }
+}
+
+function sfxLand(force){
+  const a = audio(); if (!a) return;
+  const t0 = a.currentTime;
+  const o = a.createOscillator(), g = a.createGain();
+  o.type = 'sine';
+  o.frequency.setValueAtTime(140, t0);
+  o.frequency.exponentialRampToValueAtTime(58, t0 + 0.12);
+  g.gain.setValueAtTime(Math.min(0.09, force * 0.06), t0);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.16);
+  o.connect(g); g.connect(master);
+  o.start(t0); o.stop(t0 + 0.18);
+}
+
+// 一波结束 / 过关的上行琶音
+function sfxChord(up){
+  const a = audio(); if (!a) return;
+  const t0 = a.currentTime;
+  const steps = up ? [0,4,7,12,16,19] : [12,7,4,0,-5];
+  steps.forEach((d, i) => {
+    const t = t0 + i * 0.07;
+    const o = a.createOscillator(), g = a.createGain();
+    o.type = 'triangle';
+    o.frequency.value = 261.63 * Math.pow(2, d / 12);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(0.13, t + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
+    o.connect(g); g.connect(master);
+    o.start(t); o.stop(t + 0.52);
+  });
+}
+
+function buzz(p){
+  if (S.muted) return;
+  try{ navigator.vibrate && navigator.vibrate(p); }catch(e){}
+}
+
+/* ═══════════════ 棋盘逻辑 ═══════════════ */
+const tileAt = (c, i) => (S.cols[c] && S.cols[c][i]) || null;
+
+// 同色连通团（正交相邻）
+function groupAt(c, i){
+  const t = tileAt(c, i);
+  if (!t) return [];
+  const color = t.color;
+  const seen = new Set([c + ',' + i]);
+  const out = [[c, i]];
+  const stack = [[c, i]];
+  while (stack.length){
+    const [x, y] = stack.pop();
+    const nb = [[x+1,y],[x-1,y],[x,y+1],[x,y-1]];
+    for (const [nx, ny] of nb){
+      if (nx < 0 || nx >= COLS || ny < 0) continue;
+      const k = nx + ',' + ny;
+      if (seen.has(k)) continue;
+      const nt = tileAt(nx, ny);
+      if (nt && nt.color === color){ seen.add(k); out.push([nx, ny]); stack.push([nx, ny]); }
+    }
+  }
+  return out;
+}
+
+// 全盘所有可消的团（>=2）
+function allGroups(){
+  const seen = new Set(), res = [];
+  for (let c = 0; c < COLS; c++){
+    const col = S.cols[c]; if (!col) continue;
+    for (let i = 0; i < col.length; i++){
+      const k = c + ',' + i;
+      if (seen.has(k)) continue;
+      const g = groupAt(c, i);
+      g.forEach(([x, y]) => seen.add(x + ',' + y));
+      if (g.length >= 2) res.push(g);
+    }
+  }
+  return res;
+}
+
+// 贪心最优团：最大化 (n-1)^2，同分取更大团
+function bestGroup(){
+  let best = null, bs = -1;
+  for (const g of allGroups()){
+    const s = Math.pow(g.length - 1, 2);
+    if (s > bs){ bs = s; best = g; }
+  }
+  return best;
+}
+
+// 纯颜色数组上的贪心估值：这一盘最多能打出多少分（不计连击）。
+// 用来给每一盘定目标 —— 只读不动真实棋盘。
+function greedyScore(colorCols){
+  const cols = colorCols.map(c => c.slice());
+  let total = 0, guard = 0;
+  while (guard++ < 500){
+    const seen = new Set();
+    let best = null, bs = -1;
+    for (let c = 0; c < COLS; c++){
+      for (let i = 0; i < cols[c].length; i++){
+        const k = c + ',' + i;
+        if (seen.has(k)) continue;
+        const color = cols[c][i];
+        const group = [[c, i]];
+        seen.add(k);
+        const st = [[c, i]];
+        while (st.length){
+          const [x, y] = st.pop();
+          for (const [nx, ny] of [[x+1,y],[x-1,y],[x,y+1],[x,y-1]]){
+            if (nx < 0 || nx >= COLS || ny < 0) continue;
+            const kk = nx + ',' + ny;
+            if (seen.has(kk)) continue;
+            const nv = cols[nx][ny];
+            if (nv !== undefined && nv === color){
+              seen.add(kk); group.push([nx, ny]); st.push([nx, ny]);
+            }
+          }
+        }
+        if (group.length >= 2){
+          const s = Math.pow(group.length - 1, 2);
+          if (s > bs){ bs = s; best = group; }
+        }
+      }
+    }
+    if (!best) break;
+    total += bs;
+    const kill = {};
+    for (const [c, i] of best) (kill[c] || (kill[c] = [])).push(i);
+    for (const c in kill){
+      const ks = new Set(kill[c]);
+      cols[c] = cols[c].filter((_, i) => !ks.has(i));
+    }
+  }
+  return total;
+}
+
+/* ═══════════════ 布局 ═══════════════ */
+// 棋盘 8 列固定（拇指友好），行数按可用区域的高宽比反推，
+// 这样格子同时贴着宽和高的约束、不留大片死区。只在开局算一次，
+// 之后 resize 不再改行数，避免玩到一半棋盘变尺寸。
+function computeRows(){
+  const stage = $('stage');
+  const w = stage.clientWidth, h = stage.clientHeight;
+  if (!w || !h) return;
+  ROWS = Math.max(10, Math.min(14, Math.round(COLS * h / w)));
+}
+
+function resize(){
+  const stage = $('stage');
+  const w = stage.clientWidth, h = stage.clientHeight;
+  const dpr = Math.min(window.devicePixelRatio || 1, 3);
+  cv.width = Math.round(w * dpr);
+  cv.height = Math.round(h * dpr);
+  cv.style.width = w + 'px';
+  cv.style.height = h + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  const tile = Math.floor(Math.min(w / COLS, h / ROWS));
+  S.tile = tile;
+  S.boardW = tile * COLS;
+  S.boardH = tile * ROWS;
+  S.boardX = Math.round((w - S.boardW) / 2);
+  S.boardY = Math.round((h - S.boardH) / 2);
+
+  // 重排已有棋子的目标位置（旋转屏幕时直接吸附）
+  for (let c = 0; c < COLS; c++){
+    const col = S.cols[c]; if (!col) continue;
+    col.forEach((t, i) => { t.py = Math.round(S.boardY + (ROWS - 1 - i) * tile); });
+  }
+}
+window.addEventListener('resize', resize);
+window.addEventListener('orientationchange', () => setTimeout(resize, 120));
+
+/* ═══════════════ 生成波次 ═══════════════ */
+function genColors(colors){
+  const cc = [];
+  for (let c = 0; c < COLS; c++){
+    const col = [];
+    for (let i = 0; i < ROWS; i++) col.push((Math.random() * colors) | 0);
+    cc.push(col);
+  }
+  return cc;
+}
+
+function spawnWave(cascade){
+  const colors = colorsFor(S.wave);
+
+  // 单盘的得分潜力波动能到三倍以上。连开 5 个候选盘取潜力居中的那个，
+  // 让每一波"能打多少分"大致稳定，不至于这波肥得流油、下波瘦得可怜。
+  const cands = [];
+  for (let k = 0; k < 5; k++){
+    const cc = genColors(colors);
+    cands.push({ cc, p: greedyScore(cc) });
+  }
+  cands.sort((a, b) => a.p - b.p);
+  const pick = cands[cands.length >> 1];
+
+  S.cols = pick.cc.map((col, c) => col.map((color, i) => ({
+    color,
+    py: cascade ? (S.boardY - S.tile * (2.2 + c * 0.4 + Math.random() * 1.6))
+                : S.boardY + (ROWS - 1 - i) * S.tile,
+    vy: 0,
+    squash: 0,
+  })));
+
+  S.waveScore = 0;
+  // 提示里存的是旧棋盘的下标，换波后必须清掉，否则高亮会跑到新棋盘上
+  S.hint = null;
+  S.hintT = 0;
+  S.settling = true;
+  updateHUD();
+}
+
+/* ═══════════════ 消除 ═══════════════ */
+function burst(group, silent){
+  if (!group || group.length < 2) return;
+  const n = group.length;
+
+  // 连击窗口
+  if (S.comboT > 0) S.combo = Math.min(S.combo + 1, COMBO_MAX);
+  else S.combo = 1;
+  S.comboT = COMBO_WIN;
+
+  const base = Math.pow(n - 1, 2);
+  const mult = Math.max(1, S.combo);
+  const gain = base * mult;
+
+  S.score += gain;
+  S.waveScore += gain;
+
+  // 质心，用于特效与飘字
+  let cx = 0, cy = 0;
+  for (const [c, i] of group){
+    const t = tileAt(c, i);
+    if (!t) continue;
+    const px = S.boardX + c * S.tile + S.tile / 2;
+    const py = t.py + S.tile / 2;
+    cx += px; cy += py;
+    // 碎屑
+    const cnt = REDUCE ? 2 : Math.min(7, 3 + (n >> 1));
+    for (let k = 0; k < cnt; k++){
+      const a = Math.random() * Math.PI * 2;
+      const sp = 90 + Math.random() * 330 * (1 + n / 16);
+      S.parts.push({
+        x: px + (Math.random() - .5) * S.tile * .5,
+        y: py + (Math.random() - .5) * S.tile * .5,
+        vx: Math.cos(a) * sp,
+        vy: Math.sin(a) * sp - 160,
+        life: 1, decay: 1.5 + Math.random() * 1.1,
+        size: S.tile * (0.10 + Math.random() * 0.17),
+        color: t.color,
+      });
+    }
+  }
+  cx /= n; cy /= n;
+
+  // 从各列移除
+  const byCol = {};
+  for (const [c, i] of group) (byCol[c] || (byCol[c] = [])).push(i);
+  for (const c in byCol){
+    const kill = new Set(byCol[c]);
+    S.cols[c] = S.cols[c].filter((_, i) => !kill.has(i));
+  }
+
+  // 大团冲击环
+  if (n >= 5 && !REDUCE){
+    S.rings.push({ x: cx, y: cy, r: S.tile * .6, max: S.tile * (1.6 + n * .22), life: 1, color: HUES[0].base });
+  }
+  // 屏幕震动
+  if (!REDUCE) S.shake = Math.min(9, 1.6 + n * 0.45);
+  // 飘字：连续消的时候往上错开，免得和上一条叠成一团
+  const stack = Math.min(S.floats.length, 3);
+  S.floats.push({
+    x: cx + (Math.random() - .5) * S.tile * 0.6,
+    y: cy - S.tile * .3 - stack * S.tile * 0.6,
+    text: '+' + gain, life: 1,
+    size: S.tile * (n >= 6 ? 0.62 : n >= 4 ? 0.5 : 0.4),
+    big: n >= 5,
+  });
+
+  if (!silent){
+    sfxPop(n, S.combo);
+    buzz(n >= 5 ? [14, 26, 14] : 12);
+  }
+
+  if (S.combo >= 2) showCombo(S.combo);
+
+  S.settling = true;
+  S.hint = null; S.hintT = 0;
+  updateHUD();
+}
+
+function showCombo(n){
+  el.combo.textContent = '×' + n;
+  el.combo.classList.remove('pop');
+  void el.combo.offsetWidth;
+  el.combo.classList.add('pop');
+}
+
+function toast(msg){
+  el.toast.textContent = msg;
+  el.toast.classList.remove('show');
+  void el.toast.offsetWidth;
+  el.toast.classList.add('show');
+}
+
+/* ═══════════════ 结算一波 ═══════════════ */
+// 没有失败条件，这是刻意的：实测下来"剩余块数"和"得分"都区分不出操作水平
+// （贪心解和纯随机解的剩余块数中位数只差 0~1 块），硬加目标只会做出
+// 玩家莫名其妙就输、或者永远输不了的假难度。真正的技术点是连击速度，
+// 所以这里只报账 + 清空给一份大奖励。
+function endWave(){
+  const left = S.cols.reduce((a, col) => a + col.length, 0);
+  const cleared = left === 0;
+  const gained = S.waveScore;
+
+  if (cleared){
+    const bonus = 500 * S.wave;
+    S.score += bonus;
+    S.waveScore += bonus;
+    toast('清空！+' + bonus.toLocaleString('en-US'));
+    sfxChord(true);
+    buzz([18, 40, 18]);
+  } else {
+    toast('第 ' + S.wave + ' 波 · 本波 ' + gained.toLocaleString('en-US') + ' · 剩 ' + left);
+    sfxChord(false);
+    buzz(12);
+  }
+
+  if (S.score > S.best){
+    S.best = S.score;
+    localStorage.setItem('shatter.best', String(S.best));
+  }
+
+  S.wave++;
+  S.phase = 'waveclear';
+  updateHUD();
+  setTimeout(() => { if (S.phase === 'waveclear'){ spawnWave(true); S.phase = 'play'; } }, 620);
+}
+
+function restart(){
+  S.cols = []; S.score = 0; S.wave = 1;
+  S.waveScore = 0;
+  S.combo = 0; S.comboT = 0; S.parts = []; S.floats = []; S.rings = [];
+  S.shake = 0; S.hint = null; S.hintT = 0; S.phase = 'play';
+  resize();
+  spawnWave(false);
+}
+
+/* ═══════════════ HUD ═══════════════ */
+let lastScore = 0;
+function updateHUD(){
+  if (S.score !== lastScore){
+    el.score.textContent = S.score.toLocaleString('en-US');
+    if (S.score > lastScore){
+      el.statScore.classList.remove('gain');
+      void el.statScore.offsetWidth;
+      el.statScore.classList.add('gain');
+    }
+    lastScore = S.score;
+  }
+  el.best.textContent = Math.max(S.best, S.score).toLocaleString('en-US');
+  el.wave.textContent = '第 ' + S.wave + ' 波';
+}
+
+// 连击条每帧刷新，只在状态真的变了才碰 DOM
+let comboOn = false, comboShown = -1;
+function updateComboBar(){
+  const on = S.combo > 0;
+  if (on !== comboOn){
+    comboOn = on;
+    el.track.classList.toggle('hot', on);
+    if (!on){
+      el.fill.style.width = '0%';
+      el.combos.textContent = '连击 —';
+      comboShown = -1;
+    }
+  }
+  if (on){
+    if (S.combo !== comboShown){
+      comboShown = S.combo;
+      el.combos.textContent = '连击 ×' + S.combo;
+    }
+    el.fill.style.width = (Math.max(0, S.comboT) / COMBO_WIN * 100).toFixed(1) + '%';
+  }
+}
+
+/* ═══════════════ 输入 ═══════════════ */
+function hit(px, py){
+  const c = Math.floor((px - S.boardX) / S.tile);
+  if (c < 0 || c >= COLS) return null;
+  const rowTop = Math.floor((py - S.boardY) / S.tile);
+  if (rowTop < 0 || rowTop >= ROWS) return null;
+  const i = ROWS - 1 - rowTop;
+  if (!tileAt(c, i)) return null;
+  return [c, i];
+}
+
+function onDown(e){
+  if (S.phase !== 'play') return;
+  audio();  // 首次交互解锁音频
+  const r = cv.getBoundingClientRect();
+  const p = e.touches ? e.touches[0] : e;
+  const cell = hit(p.clientX - r.left, p.clientY - r.top);
+  if (!cell) return;
+  e.preventDefault();
+  const g = groupAt(cell[0], cell[1]);
+  if (g.length >= 2) burst(g);
+  else {
+    // 单块：轻推一下表示"这个消不动"
+    const t = tileAt(cell[0], cell[1]);
+    if (t){ t.squash = 0.18; }
+  }
+}
+
+cv.addEventListener('touchstart', onDown, { passive:false });
+cv.addEventListener('mousedown', onDown);
+
+cv.addEventListener('touchmove', e => e.preventDefault(), { passive:false });
+document.addEventListener('gesturestart', e => e.preventDefault());
+document.addEventListener('contextmenu', e => e.preventDefault());
+
+$('btn-restart').addEventListener('click', restart);
+$('btn-hint').addEventListener('click', () => {
+  const g = bestGroup();
+  if (!g) return;
+  S.hint = g; S.hintT = 3200;
+});
+const btnSound = $('btn-sound');
+function syncSound(){ btnSound.textContent = '声音 ' + (S.muted ? '关' : '开'); }
+btnSound.addEventListener('click', () => {
+  S.muted = !S.muted;
+  localStorage.setItem('shatter.muted', S.muted ? '1' : '0');
+  syncSound();
+  if (!S.muted) audio();
+});
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) S.comboT = 0;
+});
+
+/* ═══════════════ 绘制 ═══════════════ */
+function rr(x, y, w, h, r){
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+function drawTile(px, py, size, colorIdx, squash, glow){
+  const h = HUES[colorIdx];
+  const pad = Math.max(1, size * 0.042);
+  const w = size - pad * 2;
+  const cx = px + size / 2, cy = py + size / 2;
+  const sx = 1 + squash * 0.55, sy = 1 - squash;
+  const r = Math.max(2.5, size * 0.21);
+
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.scale(sx, sy);
+
+  const g = ctx.createLinearGradient(0, -w / 2, 0, w / 2);
+  g.addColorStop(0, h.light);
+  g.addColorStop(0.55, h.base);
+  g.addColorStop(1, h.base);
+
+  rr(-w / 2, -w / 2, w, w, r);
+  ctx.fillStyle = g;
+  ctx.fill();
+
+  // 顶部一道高光，做出石材切面的厚度
+  ctx.beginPath();
+  ctx.moveTo(-w / 2 + r * 0.6, -w / 2 + w * 0.10);
+  ctx.lineTo(w / 2 - r * 0.6, -w / 2 + w * 0.10);
+  ctx.strokeStyle = 'rgba(255,255,255,.30)';
+  ctx.lineWidth = Math.max(1, w * 0.045);
+  ctx.lineCap = 'round';
+  ctx.stroke();
+
+  // 底部暗边，压出体积
+  ctx.beginPath();
+  ctx.moveTo(-w / 2 + r * 0.6, w / 2 - w * 0.055);
+  ctx.lineTo(w / 2 - r * 0.6, w / 2 - w * 0.055);
+  ctx.strokeStyle = 'rgba(0,0,0,.28)';
+  ctx.lineWidth = Math.max(1, w * 0.055);
+  ctx.stroke();
+
+  if (glow){
+    ctx.strokeStyle = 'rgba(255,255,255,' + glow + ')';
+    ctx.lineWidth = Math.max(1.5, w * 0.09);
+    rr(-w / 2, -w / 2, w, w, r);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function draw(dt){
+  const w = cv.clientWidth, h = cv.clientHeight;
+  ctx.clearRect(0, 0, w, h);
+
+  ctx.save();
+  if (S.shake > 0.1){
+    ctx.translate((Math.random() - .5) * S.shake, (Math.random() - .5) * S.shake);
+  }
+
+  // 棋盘内衬
+  const r = S.tile * 0.34;
+  rr(S.boardX - 4, S.boardY - 4, S.boardW + 8, S.boardH + 8, r);
+  ctx.fillStyle = 'rgba(255,255,255,.022)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,.055)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // 提示高亮（画在棋子下方）
+  if (S.hint && S.hintT > 0){
+    const pulse = 0.45 + 0.4 * Math.sin(performance.now() / 130);
+    for (const [c, i] of S.hint){
+      const t = tileAt(c, i); if (!t) continue;
+      const px = S.boardX + c * S.tile, py = t.py;
+      ctx.save();
+      ctx.shadowColor = 'rgba(255,255,255,' + pulse + ')';
+      ctx.shadowBlur = S.tile * 0.5;
+      rr(px + 2, py + 2, S.tile - 4, S.tile - 4, S.tile * 0.21);
+      ctx.strokeStyle = 'rgba(255,255,255,' + (0.35 + pulse * 0.5) + ')';
+      ctx.lineWidth = Math.max(2, S.tile * 0.08);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  // 棋子
+  for (let c = 0; c < COLS; c++){
+    const col = S.cols[c]; if (!col) continue;
+    const px = S.boardX + c * S.tile;
+    for (let i = 0; i < col.length; i++){
+      const t = col[i];
+      drawTile(px, t.py, S.tile, t.color, t.squash, 0);
+    }
+  }
+
+  // 冲击环
+  for (const ring of S.rings){
+    ctx.beginPath();
+    ctx.arc(ring.x, ring.y, ring.r, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(255,255,255,' + (ring.life * 0.42) + ')';
+    ctx.lineWidth = 2 + ring.life * S.tile * 0.1;
+    ctx.stroke();
+  }
+
+  // 碎屑
+  for (const p of S.parts){
+    const a = Math.max(0, p.life);
+    ctx.globalAlpha = a;
+    ctx.fillStyle = HUES[p.color].light;
+    const s = p.size * (0.4 + a * 0.6);
+    ctx.fillRect(p.x - s / 2, p.y - s / 2, s, s);
+  }
+  ctx.globalAlpha = 1;
+
+  // 飘分
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  for (const f of S.floats){
+    const a = Math.min(1, f.life * 2.4);
+    ctx.globalAlpha = a;
+    ctx.font = '800 ' + f.size.toFixed(0) + 'px -apple-system,"Segoe UI",system-ui,sans-serif';
+    // 先描一圈深色再填字：不然压在亮色方块上根本看不清
+    ctx.lineWidth = Math.max(2.5, f.size * 0.17);
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = 'rgba(6,3,14,.62)';
+    ctx.strokeText(f.text, f.x, f.y);
+    ctx.fillStyle = f.big ? '#FFD166' : 'rgba(255,255,255,.96)';
+    ctx.fillText(f.text, f.x, f.y);
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+/* ═══════════════ 更新 ═══════════════ */
+function step(dt){
+  const now = performance.now();
+
+  // 连击窗口
+  if (S.comboT > 0){
+    S.comboT -= dt * 1000;
+    if (S.comboT <= 0) S.combo = 0;
+  }
+  updateComboBar();
+  if (S.hintT > 0) S.hintT -= dt * 1000;
+
+  // 震动衰减
+  S.shake = Math.max(0, S.shake - dt * 34);
+
+  // 粒子
+  for (let k = S.parts.length - 1; k >= 0; k--){
+    const p = S.parts[k];
+    p.vy += 2100 * dt;
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.vx *= (1 - 1.4 * dt);
+    p.life -= p.decay * dt;
+    if (p.life <= 0 || p.y > S.boardY + S.boardH + 80) S.parts.splice(k, 1);
+  }
+
+  // 冲击环
+  for (let k = S.rings.length - 1; k >= 0; k--){
+    const r = S.rings[k];
+    r.r += (r.max - r.r) * Math.min(1, dt * 7);
+    r.life -= dt * 1.9;
+    if (r.life <= 0) S.rings.splice(k, 1);
+  }
+
+  // 飘分
+  for (let k = S.floats.length - 1; k >= 0; k--){
+    const f = S.floats[k];
+    f.y -= 46 * dt;
+    f.life -= dt * 1.05;
+    if (f.life <= 0) S.floats.splice(k, 1);
+  }
+
+  // 棋子下落 + 落地挤压
+  let moving = false;
+  let bigLanded = 0;
+  for (let c = 0; c < COLS; c++){
+    const col = S.cols[c]; if (!col) continue;
+    for (let i = 0; i < col.length; i++){
+      const t = col[i];
+      const target = S.boardY + (ROWS - 1 - i) * S.tile;
+      if (t.py < target - 0.5){
+        t.vy += GRAV * dt;
+        t.py += t.vy * dt;
+        if (t.py >= target){
+          t.py = target;
+          if (t.vy > 420){
+            t.squash = Math.min(0.30, t.vy / 4200);
+            bigLanded = Math.max(bigLanded, t.vy);
+          }
+          t.vy = 0;
+        } else moving = true;
+      } else if (t.py > target){
+        // 布局变化后直接吸附
+        t.py = target; t.vy = 0;
+      }
+      if (t.squash > 0) t.squash = Math.max(0, t.squash - dt * 2.2);
+      else if (t.squash < 0) t.squash = 0;
+    }
+  }
+
+  if (bigLanded > 900) sfxLand(Math.min(1.6, bigLanded / 1600));
+
+  // 静止后判定：还有没有可消的团
+  if (!moving && S.settling){
+    S.settling = false;
+    if (S.phase === 'play' && allGroups().length === 0){
+      // 全盘清空时，剩下的孤立块一起崩掉
+      const rest = [];
+      for (let c = 0; c < COLS; c++){
+        const col = S.cols[c] || [];
+        for (let i = 0; i < col.length; i++) rest.push([c, i]);
+      }
+      if (rest.length > 0 && rest.length < 12){
+        for (const [c, i] of rest){
+          const t = tileAt(c, i);
+          if (!t) continue;
+          const px = S.boardX + c * S.tile + S.tile / 2;
+          for (let k = 0; k < 3; k++){
+            const a = Math.random() * Math.PI * 2;
+            S.parts.push({
+              x: px, y: t.py + S.tile / 2,
+              vx: Math.cos(a) * 160, vy: Math.sin(a) * 160 - 120,
+              life: 1, decay: 2.1, size: S.tile * .13, color: t.color,
+            });
+          }
+        }
+      }
+      endWave();
+    }
+  }
+}
+
+/* ═══════════════ 主循环 ═══════════════ */
+function frame(ts){
+  const dt = Math.min(0.05, (ts - (S.last || ts)) / 1000);
+  S.last = ts;
+  step(dt);
+  draw(dt);
+  requestAnimationFrame(frame);
+}
+
+/* ═══════════════ 启动 ═══════════════ */
+syncSound();
+computeRows();
+resize();
+spawnWave(false);
+updateHUD();
+requestAnimationFrame(frame);
+
+// 离线可玩：注册 service worker（file:// 打开时自动跳过）
+if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  });
+}
+
+// 开发/自动化调参接口，只在 ?dev=1 时挂出，正式玩到的是干净的那个
+if (new URLSearchParams(location.search).has('dev')) {
+  window.__shatter = {
+    S, COLS, HUES,
+    get ROWS(){ return ROWS; },
+    allGroups, bestGroup, groupAt, tileAt, greedyScore, colorsFor,
+    spawnWave, restart,
+
+    burstAt(c, i) {
+      const g = groupAt(c, i);
+      if (g.length >= 2) burst(g, true);
+      return g.length;
+    },
+
+    // 贪心把当前这一盘消干，用来量难度曲线（不计连击，是玩家得分的下界）
+    autoSolve(maxTaps) {
+      S.settling = true;
+      let taps = 0;
+      while (taps < (maxTaps || 400)) {
+        const g = bestGroup();
+        if (!g) break;
+        const byCol = {};
+        for (const [c, i] of g) (byCol[c] || (byCol[c] = [])).push(i);
+        for (const c in byCol) {
+          const kill = new Set(byCol[c]);
+          S.cols[c] = S.cols[c].filter((_, i) => !kill.has(i));
+        }
+        const n = g.length;
+        const base = Math.pow(n - 1, 2);
+        S.score += base;
+        S.waveScore += base;
+        taps++;
+      }
+      return { taps, score: S.score, waveScore: S.waveScore };
+    },
+  };
+}
+
+})();
+</script>
+</body>
+</html>
